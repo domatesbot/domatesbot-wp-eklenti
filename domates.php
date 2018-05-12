@@ -42,12 +42,20 @@ function yarbotConverterFonksiyon() {
 	<script type="text/javascript">
         jQuery("body").on("click", "#tumunuDonustur", function () {
             jQuery("table#yarbotConverterTable tbody tr").each(function () {
-                console.log(jQuery(this).find("td:nth-child(1)").html());
-                //TODO: ajax isteği ile panele gönder. Çıktısını bekle.
-
+				var postDurum = jQuery(this).find("td:nth-child(6)").html();
+				console.log(postDurum);
+				jQuery("#tumunuDonustur").attr("disabled","disabled");	
+				if(postDurum == "Bekliyor.") {
+					var postID = jQuery(this).find("td:nth-child(1)").html();
+					var videoSource = jQuery(this).find("td:nth-child(3)").html();
+					var videoID = jQuery(this).find("td:nth-child(4)").html();
+					jQuery.post("<?php echo get_option('domatesHost') ?>wp-video-cevir", { postID: postID, videoSource: videoSource, videoID: videoID, privateKey: "<?php echo get_option('domatesEssizKey'); ?> "}, function(result) {
+						jQuery("td:contains("+result.postID+")").closest("tr").find("td:nth-child(6)").html("Yapıldı");
+					});
+				}
+				//TODO: ajax isteği ile panele gönder. Çıktısını bekle.
             });
         });
-
 	</script>
 	<div class="container">
 		<h2>YARBOT CONVERTER</h2>
@@ -63,7 +71,7 @@ function yarbotConverterFonksiyon() {
 				<th>Video Kaynağı</th>
 				<th>Video ID</th>
 				<th>Eklenme Tarihi</th>
-				<th>İşlem</th>
+				<th>Durum</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -92,9 +100,7 @@ function yarbotConverterFonksiyon() {
 				<td><?php echo $ayrilmis[4]; ?></td>
 				<td><?php echo $videoIDAyrilmis[0]; ?></td>
 				<td><?php echo $post->post_date_gmt; ?></td>
-				<td>
-					<button type="button" class="btn btn-primary">Dönüştür</button>
-				</td>
+				<td>Bekliyor.</td>
 			</tr>
 			<?php
 			$kacAdet++;
@@ -182,6 +188,23 @@ add_action('rest_api_init', function () {
 		'callback' => 'tekliIcerikVer',
 	]);
 });
+add_action('rest_api_init', function () {
+	register_rest_route('domates/v1', '/videoConvert', [
+		'methods' => 'POST',
+		'callback' => 'icerikCevir',
+	]);
+});
+function icerikCevir($data) {
+	if($data['securityKey'] == get_option('domatesEssizKey')) {
+		$postID = $data['postID'];
+		$videoID = $data['videoID'];
+		$resimURL = get_post_meta($postID,"dp_video_poster",true);
+		update_post_meta( $postID, 'dp_video_code', '[domatesVideoIcerik videoid="' . $videoID . '" largephoto="' . base64_encode($resimURL) . '"]');
+		return true;
+	} else {
+		return false;
+	}
+}
 function postEkle($data) {
 	//gerekli alanlar: postTitle, postContent, postStatus, postCategory, postType, duration, videoID, seoDesc, desc, resimURL, postTags, postDateGMT, postDate
 	if($data['securityKey'] == get_option('domatesEssizKey')) {
@@ -267,8 +290,23 @@ function icerikVer($data) {
 			'post_type' => 'post',
 			'suppress_filters' => true,
 		];
+		if($data['postStatus']){
+			$args['post_status'] = $data['postStatus'];
+		}
+		$query = new WP_Query( array( 'meta_key' => 'domatesBotIcerik', 'meta_value' => 'true' ) );
+		$infoCount = $query->found_posts;
 		$posts_array = get_posts($args);
-		return $posts_array;
+
+		foreach ($posts_array as &$value) {
+			$value->foto = get_the_post_thumbnail_url($value->ID, 'post-thumbnail');
+			$value->fotoFull = get_the_post_thumbnail_url($value->ID, 'full');
+		}
+
+		$results = [
+			'posts' => $posts_array,
+			'info' => $infoCount
+		];
+		return $results;
 	} else {
 		return false;
 	}
